@@ -114,12 +114,12 @@ def test_the_page_keys_step_through_the_speeds_and_stop_at_each_end(mod):
     m.tick()
     seen = []
     for _ in range(6):
-        press(m, "PAGE_UP")
+        press(m, "ADD")
         m.tick()
         seen.append(m.game.statics.dilation)
     assert seen == [2, 4, 8, 8, 8, 8]
     for _ in range(5):
-        press(m, "PAGE_DOWN")
+        press(m, "SUBTRACT")
         m.tick()
     assert m.game.statics.dilation == 1
     assert m.test.Index() == 1
@@ -129,24 +129,24 @@ def test_home_returns_to_normal_at_once(mod):
     m = mod()
     m.tick()
     for _ in range(3):
-        press(m, "PAGE_UP")
+        press(m, "ADD")
         m.tick()
     assert m.game.statics.dilation == 8
-    press(m, "HOME")
+    press(m, "NUM_ZERO")
     m.tick()
     assert m.game.statics.dilation == 1 and m.test.Index() == 1
 
 
 def test_the_keys_need_ctrl_and_alt(mod):
     m = mod()
-    for key in ("PAGE_UP", "PAGE_DOWN", "HOME"):
+    for key in ("ADD", "SUBTRACT", "NUM_ZERO"):
         assert set(m.g.Binds[key]["modifiers"].values()) == {"CONTROL", "ALT"}
 
 
 def test_a_loaded_save_goes_back_to_normal_speed(mod):
     m = mod()
     m.tick()
-    press(m, "PAGE_UP")
+    press(m, "ADD")
     m.tick()
     assert m.game.statics.dilation == 2
     m.g.NewPlayerCallbacks[1]()  # the game made a new player controller: a save was loaded
@@ -156,7 +156,7 @@ def test_a_loaded_save_goes_back_to_normal_speed(mod):
 
 def test_nothing_is_done_while_the_game_has_no_player_and_it_is_tried_again(mod):
     m = mod(ready=False)
-    press(m, "PAGE_UP")
+    press(m, "ADD")
     m.tick()
     assert m.game.statics.calls == [] and m.test.Index() == 1  # the speed did not change, nothing was told
     m.game.ready = True
@@ -171,7 +171,7 @@ def test_it_logs_how_fast_the_world_runs_only_while_fast(mod):
     m.game.statics.seconds = 10.0
     m.tick()
     assert len(m.g.Printed) == before  # normal speed: nothing is logged
-    press(m, "PAGE_UP")
+    press(m, "ADD")
     m.tick()
     lines = [m.g.Printed[i] for i in range(1, len(m.g.Printed) + 1)]
     assert any("speed 2x (dilation 2.00)" in line for line in lines)

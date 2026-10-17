@@ -6,11 +6,12 @@ Speed up the game's time while sailing, for Ships At Sea, as a UE4SS Lua mod.
 
 | Keys | Does |
 | --- | --- |
-| **Ctrl+Alt+PageUp** | next speed up: 1x, 2x, 4x, 8x |
-| **Ctrl+Alt+PageDown** | next speed down |
-| **Ctrl+Alt+Home** | back to normal speed at once |
+| **Ctrl+Alt+Numpad +** | next speed up: 1x, 2x, 4x, 8x |
+| **Ctrl+Alt+Numpad -** | next speed down |
+| **Ctrl+Alt+Numpad 0** | back to normal speed at once |
 
-A toast names the speed each time it changes.
+A toast names the speed each time it changes. The keys are on the numeric keypad because the game uses
+PageUp, PageDown and Home for the engine (and ignores Ctrl and Alt); Num Lock must be on for Numpad 0.
 
 The speed is the game's global time dilation, so the world, the boat, the water and the calendar all run
 faster together. Measured at 4x, the world clock and the calendar followed it. Nothing here changes the

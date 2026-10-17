@@ -1,7 +1,8 @@
 -- SasTimeAccelerate: speed up the game's time while sailing.
---   Ctrl+Alt+PageUp    next speed up  (1, 2, 4, 8)
---   Ctrl+Alt+PageDown  next speed down
---   Ctrl+Alt+Home      back to normal speed at once
+--   Ctrl+Alt+Numpad +  next speed up  (1, 2, 4, 8)
+--   Ctrl+Alt+Numpad -  next speed down
+--   Ctrl+Alt+Numpad 0  back to normal speed at once
+-- (Not PageUp/PageDown or Home: the game uses those for the engine, and ignores Ctrl and Alt.)
 -- The speed is the game's global time dilation, so the world, the boat and the calendar all run faster
 -- together (the calendar and the world clock follow it; measured at 4x). The game always starts at normal
 -- speed, whatever it was left at, and goes back to normal when a save is loaded.
@@ -12,7 +13,7 @@
 
 -- Which copy of this script is running. The log says a release name and a checksum of the file itself, so
 -- there is never a doubt whether the game loaded the version that was meant to be deployed.
-SCRIPT_VERSION = "2026-10-17.1"
+SCRIPT_VERSION = "2026-10-17.2"
 function ScriptChecksum()
     local file = io.open(debug.getinfo(1, "S").source:sub(2), "rb")
     if not file then return "unreadable", 0 end
@@ -134,9 +135,9 @@ local function Step()
     end
 end
 
-RegisterKeyBind(Key.PAGE_UP, { ModifierKey.CONTROL, ModifierKey.ALT }, function() Wanted = "up" end)
-RegisterKeyBind(Key.PAGE_DOWN, { ModifierKey.CONTROL, ModifierKey.ALT }, function() Wanted = "down" end)
-RegisterKeyBind(Key.HOME, { ModifierKey.CONTROL, ModifierKey.ALT }, function() Wanted = "home" end)
+RegisterKeyBind(Key.ADD, { ModifierKey.CONTROL, ModifierKey.ALT }, function() Wanted = "up" end)
+RegisterKeyBind(Key.SUBTRACT, { ModifierKey.CONTROL, ModifierKey.ALT }, function() Wanted = "down" end)
+RegisterKeyBind(Key.NUM_ZERO, { ModifierKey.CONTROL, ModifierKey.ALT }, function() Wanted = "home" end)
 
 LoopInGameThreadWithDelay(500, function()
     pcall(Step)
@@ -150,7 +151,7 @@ pcall(function()
     end)
 end)
 
-Log("loaded: Ctrl+Alt+PageUp / PageDown change the game speed (1, 2, 4, 8), Ctrl+Alt+Home returns to normal")
+Log("loaded: Ctrl+Alt+Numpad + / Numpad - change the game speed (1, 2, 4, 8), Ctrl+Alt+Numpad 0 returns to normal")
 
 if SAS_TEST then
     SasTest = {
