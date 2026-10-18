@@ -14,11 +14,22 @@ A toast names the speed each time it changes. The keys are on the numeric keypad
 PageUp, PageDown and Home for the engine (and ignores Ctrl and Alt); Num Lock must be on for Numpad 0.
 
 The speed is the game's global time dilation, so the world, the boat, the water and the calendar all run
-faster together. Measured at 4x, the world clock and the calendar followed it. Nothing here changes the
-calendar's own speed setting.
+faster together. Nothing here changes the calendar's own speed setting.
 
 The game always starts at normal speed, whatever it was left at, and goes back to normal when a save is
 loaded. There is no time limit. Go up a step at a time, and come down before docking or working a crane.
+
+## Tested
+
+Measured from the log, in solo play on the class 2 cargo boat:
+
+- **At the dock**, the world clock ran at 4.00x and 8.00x real time, and the calendar kept pace (it runs at
+  its own speed times the dilation).
+- **Sailing at about 16 knots**, it held 4.00x at 4x and 8.00x (7.99 to 8.02) at 8x for 80 seconds. The boat's
+  speed stayed at 16 to 17 knots. At 4x the heel stayed under half a degree. At 8x it was mostly under
+  1.5 degrees, with a few readings between 2.7 and 5.7 degrees (and a pitch of 4.9) in rougher water, and it
+  settled back each time. There is no reading of the same leg at normal speed to compare with.
+- Not tested: other boats, crane work at speed, towing, multiplayer.
 
 ## Telemetry
 
