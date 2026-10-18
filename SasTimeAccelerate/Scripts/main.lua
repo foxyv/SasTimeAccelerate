@@ -7,13 +7,16 @@
 -- together (the calendar and the world clock follow it; measured at 4x). The game always starts at normal
 -- speed, whatever it was left at, and goes back to normal when a save is loaded.
 --
+-- Taking hold of the boat puts the speed back to normal: a change of the throttle, the helm moving, taking the
+-- helm with the autopilot on, and the autopilot turning off. (See WatchControls; each can be switched off there.)
+--
 -- While the speed is above normal the log gets a line every few seconds: how fast the world clock really
 -- runs against the wall clock, the nearest boat's speed, heel and trim, and the calendar, so that what a
 -- speed does to a boat can be read afterwards.
 
 -- Which copy of this script is running. The log says a release name and a checksum of the file itself, so
 -- there is never a doubt whether the game loaded the version that was meant to be deployed.
-SCRIPT_VERSION = "2026-10-17.2"
+SCRIPT_VERSION = "2026-10-18.1"
 function ScriptChecksum()
     local file = io.open(debug.getinfo(1, "S").source:sub(2), "rb")
     if not file then return "unreadable", 0 end
@@ -110,6 +113,104 @@ local function Report()
         statics:GetGlobalTimeDilation(controller), rate, boatText, calendar))
 end
 
+-- Fast time is for sailing along: anything that takes hold of the boat puts the speed back to normal. The player
+-- changing the throttle, steering (the helm, with or without the autopilot on), and the autopilot letting go
+-- all do. The boat's controls are looked at every step: while the speed is normal what they say is only
+-- remembered, and while it is fast a change from what was remembered ends the fast time.
+RESET_ON_THROTTLE = true
+RESET_ON_STEERING = true
+RESET_ON_AUTOPILOT_OFF = true
+THROTTLE_STEP = 0.02      -- a change smaller than this is not one
+STEERING_STEP = 0.02
+
+local Seen = nil          -- the controls as last looked at: { throttle = {address = value}, steering = {...}, autopilot = bool }
+local ManualSteered = false   -- the game said the player steered by hand with the autopilot on
+
+local function Owner(group)
+    local owner = nil
+    pcall(function() owner = group.MovementComponent:GetOwner() end)
+    return owner
+end
+
+local function SameObject(a, b)
+    if a == nil or b == nil then return false end
+    local ok, same = pcall(function() return a:GetAddress() == b:GetAddress() end)
+    return ok and same
+end
+
+-- The values of a kind of control group that belong to the boat (all of them, if their owners cannot be read).
+local function GroupValues(class, field, boat)
+    local values, owned = {}, false
+    for _, group in ipairs(FindAllOf(class) or {}) do
+        pcall(function()
+            if group:GetFullName():find("Default__", 1, true) then return end
+            local owner = Owner(group)
+            if owner ~= nil and SameObject(owner, boat) then owned = true end
+            values[group:GetAddress()] = { value = group[field] + 0.0, mine = owner ~= nil and SameObject(owner, boat) }
+        end)
+    end
+    local plain = {}
+    for address, entry in pairs(values) do
+        if entry.mine or not owned then plain[address] = entry.value end
+    end
+    return plain
+end
+
+local function AutopilotOn()
+    for _, component in ipairs(FindAllOf("AutopilotComponent") or {}) do
+        local active = false
+        pcall(function()
+            if not component:GetFullName():find("Default__", 1, true) then active = component.bAutopilotActivated == true end
+        end)
+        if active then return true end
+    end
+    return false
+end
+
+local function Changed(before, after, step)
+    for address, value in pairs(after) do
+        if before[address] ~= nil and math.abs(before[address] - value) >= step then return before[address], value end
+    end
+    return nil
+end
+
+-- Looks at the controls of the boat nearest the player. Returns why the fast time should end, if it should. The
+-- controls looked at are remembered, so what is seen next time is compared with this.
+local function WatchControls()
+    local controller = Controller()
+    if not controller or not controller.Pawn then return nil end
+    local boat = NearestBoat(controller.Pawn:K2_GetActorLocation())
+    if not boat then Seen = nil return nil end
+    local now = {
+        throttle = GroupValues("PropulsionGroup", "Throttle", boat),
+        steering = GroupValues("SteeringGroup", "SteeringInput", boat),
+        autopilot = AutopilotOn(),
+    }
+    local before, reason = Seen, nil
+    Seen = now
+    local manual = ManualSteered
+    ManualSteered = false
+    if not before then return nil end
+    if RESET_ON_AUTOPILOT_OFF and before.autopilot and not now.autopilot then
+        reason = "the autopilot is off"
+    elseif RESET_ON_STEERING and manual then
+        reason = "you took the helm"
+    elseif RESET_ON_THROTTLE then
+        local from, to = Changed(before.throttle, now.throttle, THROTTLE_STEP)
+        if from then reason = string.format("the throttle changed (%.2f to %.2f)", from, to) end
+    end
+    -- With the autopilot on it steers itself all the time, so only a hand on the helm (above) counts then.
+    if not reason and RESET_ON_STEERING and not before.autopilot and not now.autopilot then
+        local from, to = Changed(before.steering, now.steering, STEERING_STEP)
+        if from then reason = string.format("the helm moved (%.2f to %.2f)", from, to) end
+    end
+    return reason
+end
+
+pcall(function()
+    RegisterHook("/Script/Sas.AutopilotComponent:ServerOnReceiveManualSteeringInput", function() ManualSteered = true end)
+end)
+
 -- One step on the game thread: starts at normal speed, does what the keys asked, and reports.
 local function Step()
     if not Started then
@@ -128,6 +229,13 @@ local function Step()
         else
             Index = before
         end
+    end
+    -- Taking hold of the boat ends fast time. At normal speed this only keeps what the controls say up to date.
+    local why = nil
+    pcall(function() why = WatchControls() end)
+    if why and SPEEDS[Index] > 1 then
+        Index = 1
+        if Apply(1) then Toast("Game speed 1x: " .. why) end
     end
     if SPEEDS[Index] > 1 and os.clock() - LastReport >= TELEMETRY_S then
         LastReport = os.clock()

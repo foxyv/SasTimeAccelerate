@@ -23,6 +23,8 @@ Binds = {}
 function RegisterKeyBind(key, modifiers, fn) Binds[key] = { modifiers = modifiers, fn = fn } end
 NewPlayerCallbacks = {}
 function NotifyOnNewObject(class, fn) NewPlayerCallbacks[#NewPlayerCallbacks + 1] = fn end
+Hooks = {}
+function RegisterHook(path, fn) Hooks[path] = fn end
 function FName(text) return text end
 function FText(text) return text end
 Key = setmetatable({}, { __index = function(_, name) return name end })
@@ -87,7 +89,17 @@ def mod():
         g.SAS_TEST = True
         g.FindFirstOf = lambda name: game.controller if (game.ready and name == "PlayerController") else None
         g.FindAllOf = lambda name: None
-        g.StaticFindObject = lambda path: game.statics if (game.ready and "GameplayStatics" in path) else None
+        # The statics are reached through a Lua table of plain function calls: lupa mixes up the object of a
+        # colon call on a Python object after the script has made enough garbage, which has nothing to do with the game.
+        g.PyStatics, g.PyReady = game.statics, lambda: game.ready
+        lua.execute("""
+            StaticsLua = {
+                SetGlobalTimeDilation = function(_, c, v) return PyStatics.SetGlobalTimeDilation(c, v) end,
+                GetGlobalTimeDilation = function(_, c) return PyStatics.GetGlobalTimeDilation(c) end,
+                GetTimeSeconds = function(_, c) return PyStatics.GetTimeSeconds(c) end,
+            }
+            function StaticFindObject(path) if PyReady() and path:find("GameplayStatics", 1, true) then return StaticsLua end end
+        """)
         loader = lua.eval("function(src, name) return load(src, '@' .. name) end")
         chunk = loader(SCRIPT.read_text(encoding="utf-8"), str(SCRIPT))
         chunk()
@@ -189,3 +201,153 @@ def test_the_checksum_in_the_log_is_the_files_own(mod):
     data = SCRIPT.read_bytes()
     line = m.g.Printed[1]
     assert f"file checksum {fnv1a(data)} ({len(data)} bytes)" in line
+
+
+# ---- taking hold of the boat ends fast time
+
+class Part:
+    """Anything with a name and an address: a boat, a control group, the autopilot."""
+
+    count = 0
+
+    def __init__(self, name):
+        Part.count += 1
+        self.name, self.address = name, Part.count
+
+    def GetFullName(self):
+        return self.name
+
+    def GetAddress(self):
+        return self.address
+
+    def IsValid(self):
+        return True
+
+
+class FakeBoat(Part):
+    def __init__(self, x=0.0):
+        super().__init__("BP_Boat_C_1")
+        self.x = x
+
+    def K2_GetActorLocation(self):
+        return Vec(X=self.x, Y=0.0, Z=0.0)
+
+    def GetVelocity(self):
+        return Vec(X=0.0, Y=0.0, Z=0.0)
+
+    def K2_GetActorRotation(self):
+        return Vec(Roll=0.0, Pitch=0.0, Yaw=0.0)
+
+
+class Group(Part):
+    def __init__(self, boat, field, value=0.0):
+        super().__init__("Group")
+        self.MovementComponent = type("Movement", (), {"GetOwner": lambda self_: boat})()
+        setattr(self, field, value)
+
+
+class Pilot(Part):
+    def __init__(self):
+        super().__init__("AutopilotComponent")
+        self.bAutopilotActivated = False
+
+
+@pytest.fixture
+def boat_mod(mod):
+    m = mod()
+    m.boat = FakeBoat()
+    m.other = FakeBoat(x=900000.0)
+    m.throttle = Group(m.boat, "Throttle")
+    m.helm = Group(m.boat, "SteeringInput")
+    m.far_throttle = Group(m.other, "Throttle")
+    m.pilot = Pilot()
+
+    def find_all(name):
+        parts = {"Boat": [m.boat, m.other], "PropulsionGroup": [m.throttle, m.far_throttle], "SteeringGroup": [m.helm],
+                 "AutopilotComponent": [m.pilot]}.get(name)
+        return m.lua.table_from(parts) if parts is not None else None
+
+    m.g.FindAllOf = find_all
+    m.tick()
+    return m
+
+
+def at_speed(m, key="ADD"):
+    press(m, key)
+    m.tick()
+    assert m.game.statics.dilation > 1
+    m.tick()  # the controls are looked at once more at speed, so they are remembered
+
+
+def test_a_throttle_change_puts_the_speed_back_to_normal(boat_mod):
+    m = boat_mod
+    at_speed(m)
+    m.throttle.Throttle = 0.5
+    m.tick()
+    assert m.game.statics.dilation == 1 and m.test.Index() == 1
+    assert any("the throttle changed (0.00 to 0.50)" in line for line in m.g.Printed.values())
+
+
+def test_an_unchanged_throttle_leaves_the_speed_alone(boat_mod):
+    m = boat_mod
+    at_speed(m)
+    m.throttle.Throttle = 0.005  # below the size of a change
+    m.tick()
+    assert m.game.statics.dilation == 2
+
+
+def test_another_boats_throttle_is_not_ours(boat_mod):
+    m = boat_mod
+    at_speed(m)
+    m.far_throttle.Throttle = 1.0
+    m.tick()
+    assert m.game.statics.dilation == 2
+
+
+def test_the_helm_moving_puts_the_speed_back_to_normal(boat_mod):
+    m = boat_mod
+    at_speed(m)
+    m.helm.SteeringInput = -0.3
+    m.tick()
+    assert m.game.statics.dilation == 1
+
+
+def test_with_the_autopilot_on_its_own_steering_does_not(boat_mod):
+    m = boat_mod
+    m.pilot.bAutopilotActivated = True
+    m.tick()
+    at_speed(m)
+    for value in (0.1, -0.2, 0.3):
+        m.helm.SteeringInput = value
+        m.tick()
+    assert m.game.statics.dilation == 2
+
+
+def test_a_hand_on_the_helm_with_the_autopilot_on_ends_it(boat_mod):
+    m = boat_mod
+    m.pilot.bAutopilotActivated = True
+    m.tick()
+    at_speed(m)
+    m.g.Hooks["/Script/Sas.AutopilotComponent:ServerOnReceiveManualSteeringInput"]()
+    m.tick()
+    assert m.game.statics.dilation == 1
+
+
+def test_the_autopilot_turning_off_puts_the_speed_back_to_normal(boat_mod):
+    m = boat_mod
+    m.pilot.bAutopilotActivated = True
+    m.tick()
+    at_speed(m)
+    m.pilot.bAutopilotActivated = False
+    m.tick()
+    assert m.game.statics.dilation == 1
+    assert any("the autopilot is off" in line for line in m.g.Printed.values())
+
+
+def test_changes_at_normal_speed_are_only_remembered(boat_mod):
+    m = boat_mod
+    m.throttle.Throttle = 0.8
+    m.tick()
+    at_speed(m)
+    m.tick()
+    assert m.game.statics.dilation == 2  # the throttle was set before the fast time began

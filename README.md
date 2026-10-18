@@ -19,6 +19,23 @@ faster together. Nothing here changes the calendar's own speed setting.
 The game always starts at normal speed, whatever it was left at, and goes back to normal when a save is
 loaded. There is no time limit. Go up a step at a time, and come down before docking or working a crane.
 
+### Taking hold of the boat ends fast time
+
+While the speed is above normal, these put it straight back to 1x, with a toast that says why:
+
+- the **throttle** changing (any of the boat's propulsion groups; a change smaller than 0.02 is ignored);
+- the **helm** moving (steering input), when the autopilot is off;
+- a **hand on the helm** with the autopilot on (the game reports manual steering input to the autopilot);
+- the **autopilot turning off**.
+
+With the autopilot on, its own steering and throttle moves do not count: it steers itself all the time. Only the
+boat nearest the player is watched. Each rule can be switched off at the top of `WatchControls` in `main.lua`
+(`RESET_ON_THROTTLE`, `RESET_ON_STEERING`, `RESET_ON_AUTOPILOT_OFF`). The controls are only remembered while
+the speed is normal, so setting the throttle first and then speeding up does not end the fast time.
+
+**Not yet tried in the game.** If the throttle or the autopilot is reset when it should not be, the toast
+names the values it saw; send me the log.
+
 ## Tested
 
 Measured from the log, in solo play on the class 2 cargo boat:
